@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel bouquet</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; align-items: center; justify-content: center; background: #2b2c45; }
+  canvas { width: 100%; max-width: 360px; height: auto; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Pixelated spinning bouquet with hearts"></canvas>
+<script>
+// SC = size of each "pixel" in screen px. Bigger = chunkier. GW/GH must equal W/SC and H/SC.
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const dpr = window.devicePixelRatio || 1, W = 360, H = 420, SC = 5, GW = 72, GH = 84;
+cv.width = W * dpr; cv.height = H * dpr; ctx.scale(dpr, dpr);
+
+// Low-res offscreen canvas: the bouquet is drawn here, then re-drawn as a dot grid.
+const off = document.createElement('canvas'); off.width = GW; off.height = GH;
+const g = off.getContext('2d', { willReadFrequently: true });
+
+const OX = 180, OY = 195, F = 420, APEX = 170, R = 100, CY = -10;
+const INK = '#241a3a'; // outline color
+const pal = [[340,85,68],[8,90,55],[48,95,58],[275,65,68],[50,30,96],[350,80,60],[22,95,66],[48,95,58]];
+const flowers = [], leaves = [], N = 15, M = 9;
+
+for (let i = 0; i < N; i++) {
+  const phi = 1.15 * Math.sqrt((i + .5) / N), th = i * 2.39996, c = pal[i % pal.length];
+  flowers.push({
+    x: R * Math.sin(phi) * Math.cos(th), y: CY - R * Math.cos(phi), z: R * Math.sin(phi) * Math.sin(th),
+    h: c[0], s: c[1], l: c[2], r: 24 + (i * 7 % 9), p: i % 3 === 0 ? 8 : 6, rot: i
+  });
+}
+for (let j = 0; j < M; j++) {
+  const phi = 1.35 + (j % 3) * .06, th = j * 2 * Math.PI / M + .3, R2 = 112;
+  leaves.push({ x: R2 * Math.sin(phi) * Math.cos(th), y: CY - R2 * Math.cos(phi) + 10, z: R2 * Math.sin(phi) * Math.sin(th) });
+}
+const stars = Array.from({ length: 22 }, () => ({
+  x: Math.random() * W, y: Math.random() * H, ph: Math.random() * 6.28, sp: 1 + Math.random() * 2
+}));
+const hearts = Array.from({ length: 11 }, () => ({
+  x: Math.random() * W, y: Math.random() * H, v: 14 + Math.random() * 22,
+  ph: Math.random() * 6.28, cs: Math.random() < .5 ? 3 : 4
+}));
+const HP = ['01010', '11111', '11111', '01110', '00100']; // pixel heart
+
+let ang = 0, last = 0;
+function proj(p, a) {
+  const x = p.x * Math.cos(a) + p.z * Math.sin(a);
+  const z = -p.x * Math.sin(a) + p.z * Math.cos(a);
+  const s = F / (F - z);
+  return { x: OX + x * s, y: OY + p.y * s, z: z, s: s };
+}
+
+function drawFlower(f, q) {
+  const r = f.r * q.s, d = (q.z / R + 1) / 2, l = f.l - (1 - d) * 14;
+  const col = `hsl(${f.h},${f.s}%,${l}%)`, col2 = `hsl(${f.h},${f.s}%,${Math.min(l + 9, 97)}%)`;
+  g.lineJoin = 'round';
+  for (let layer = 0; layer < 2; layer++) {
+    const k = layer ? .62 : 1, o = layer ? Math.PI / f.p : 0;
+    for (let n = 0; n < f.p; n++) {
+      const a = n * 2 * Math.PI / f.p + o + f.rot + ang * .5;
+      g.beginPath();
+      g.ellipse(q.x + Math.cos(a) * r * .55 * k, q.y + Math.sin(a) * r * .55 * k, r * .5 * k, r * .3 * k, a, 0, 7);
+      if (layer === 0) { g.lineWidth = SC * 2; g.strokeStyle = INK; }
+      else { g.lineWidth = SC * .9; g.strokeStyle = `hsl(${f.h},${f.s}%,${Math.max(l - 28, 12)}%)`; }
+      g.stroke();
+      g.fillStyle = layer ? col2 : col; g.fill();
+    }
+  }
+  g.beginPath(); g.arc(q.x, q.y, r * .22, 0, 7);
+  g.lineWidth = SC * 1.2; g.strokeStyle = INK; g.stroke();
+  g.fillStyle = f.l > 88 ? '#e0a82e' : '#f5c542'; g.fill();
+}
+
+function drawLeaf(p, q) {
+  const a = Math.atan2(q.y - (OY + APEX), q.x - OX), d = (q.z / R + 1) / 2;
+  g.beginPath(); g.ellipse(q.x, q.y, 28 * q.s, 10 * q.s, a, 0, 7);
+  g.lineWidth = SC * 1.6; g.strokeStyle = INK; g.stroke();
+  g.fillStyle = `hsl(95,70%,${40 + d * 16}%)`; g.fill();
+}
+
+function cone() {
+  g.beginPath(); g.moveTo(-70, 8); g.quadraticCurveTo(-35, 24, 0, 12); g.quadraticCurveTo(35, 0, 70, 8);
+  g.lineTo(6, 185); g.lineTo(0, 187); g.lineTo(-6, 185); g.closePath();
+}
+
+function paper() {
+  g.save(); g.translate(OX, OY); g.lineJoin = 'round';
+  // stem below the cone
+  g.lineWidth = SC * 1.6; g.strokeStyle = INK; g.strokeRect(-5, 150, 10, 65);
+  g.fillStyle = '#7bd63a'; g.fillRect(-5, 150, 10, 65);
+  // cone outline, then the two halves
+  cone(); g.lineWidth = SC * 2; g.strokeStyle = INK; g.stroke();
+  g.fillStyle = '#e6dfae';
+  g.beginPath(); g.moveTo(-70, 8); g.quadraticCurveTo(-35, 24, 0, 12); g.lineTo(0, 187); g.lineTo(-6, 185); g.closePath(); g.fill();
+  g.fillStyle = '#f6f2cf';
+  g.beginPath(); g.moveTo(0, 12); g.quadraticCurveTo(35, 0, 70, 8); g.lineTo(6, 185); g.lineTo(0, 187); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(0, 12); g.lineTo(0, 187); g.lineWidth = SC * .8; g.strokeStyle = '#a89d62'; g.stroke();
+  // ribbon
+  g.beginPath(); g.moveTo(-26, 130); g.lineTo(26, 130); g.lineTo(19.4, 150); g.lineTo(-19.4, 150); g.closePath();
+  g.lineWidth = SC * 1.6; g.strokeStyle = INK; g.stroke(); g.fillStyle = '#f0405a'; g.fill();
+  g.restore();
+}
+
+function frame(t) {
+  const dt = Math.min((t - last) / 1000, .05); last = t;
+  ang += .012; // spin speed
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, GW, GH);
+  g.setTransform(1 / SC, 0, 0, 1 / SC, 0, 0);
+  const ap = { x: OX, y: OY + APEX };
+  g.lineCap = 'round';
+  const fl = flowers.map(f => ({ f, q: proj(f, ang) }));
+  const lv = leaves.map(p => ({ p, q: proj(p, ang) }));
+  // stems: dark outline pass first, then the green pass on top
+  const stem = (w, c) => fl.forEach(o => {
+    g.lineWidth = w * o.q.s + (c === INK ? SC * 2 : 0); g.strokeStyle = c;
+    g.beginPath(); g.moveTo(o.q.x, o.q.y); g.lineTo(ap.x, ap.y); g.stroke();
+  });
+  stem(7, INK); stem(7, '#7bd63a');
+  paper();
+  [...fl.map(o => ({ z: o.q.z, fn: () => drawFlower(o.f, o.q) })),
+   ...lv.map(o => ({ z: o.q.z - 8, fn: () => drawLeaf(o.p, o.q) }))]
+    .sort((a, b) => a.z - b.z).forEach(o => o.fn());
+
+  // Re-draw as an LED-style grid, with background, sparkles and hearts behind it.
+  const px = g.getImageData(0, 0, GW, GH).data;
+  ctx.fillStyle = '#45476b'; ctx.fillRect(0, 0, W, H);
+  const s = t / 1000;
+  stars.forEach(o => {
+    ctx.globalAlpha = .25 + .75 * Math.abs(Math.sin(s * o.sp + o.ph));
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(o.x, o.y, 3, 3);
+  });
+  hearts.forEach(h => {
+    h.y -= h.v * dt;
+    if (h.y < -20) { h.y = H + 10; h.x = Math.random() * W; }
+    const hx = h.x + Math.sin(s * 1.5 + h.ph) * 8;
+    ctx.globalAlpha = .55 + .45 * Math.abs(Math.sin(s * 2 + h.ph));
+    const dr = (col, ox, oy) => {
+      ctx.fillStyle = col;
+      for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++)
+        if (HP[r][c] === '1') ctx.fillRect(Math.round(hx + c * h.cs) + ox, Math.round(h.y + r * h.cs) + oy, h.cs, h.cs);
+    };
+    [[-1.5, 0], [1.5, 0], [0, -1.5], [0, 1.5]].forEach(d => dr(INK, d[0], d[1])); // outline
+    dr('#ff6f91', 0, 0);
+  });
+  ctx.globalAlpha = 1;
+  for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+    const i = (y * GW + x) * 4;
+    if (px[i + 3] > 110) {
+      ctx.fillStyle = `rgb(${px[i]},${px[i + 1]},${px[i + 2]})`;
+      ctx.fillRect(x * SC + .3, y * SC + .9, SC - .6, SC * .62);
+    }
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
